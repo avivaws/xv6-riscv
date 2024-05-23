@@ -12,5 +12,5 @@ main(int argc, char *argv[])
   free(c);
   printf("memory using:%d\n", memsize());
 
-  exit(0);
+  exit(0,"");
 }
