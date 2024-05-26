@@ -94,8 +94,21 @@ sys_uptime(void)
   return xticks;
 }
 
+
+//###ADDED HERE###
 uint64
 sys_memsize(void)
 {
   return myproc()->sz;
+}
+
+uint64
+sys_set_affinity_mask(void){
+  int mask;
+
+  argint(0, &mask);
+  acquire(&myproc()->lock);
+  myproc()->affinity_mask = mask;
+  release(&myproc()->lock);
+  return mask;
 }
