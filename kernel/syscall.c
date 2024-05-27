@@ -128,6 +128,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+//ADDED HERE
 [SYS_memsize] sys_memsize,
 [SYS_set_affinity_mask] sys_set_affinity_mask,
 };

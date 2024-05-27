@@ -4,7 +4,7 @@
 int
 main(int argc, char *argv[])
 {
-    set_affinity_mask(7);
+    set_affinity_mask(5);
     for(;;){
         printf("process id:%d\n",getpid());
     }
