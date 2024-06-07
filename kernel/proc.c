@@ -734,9 +734,11 @@ channel_create()
     if(c->owner == -1){
       c->owner = myproc()->pid;
       release(&c->lock);
+      wakeup(c);
       return c - channels;
     }
     release(&c->lock);
+    wakeup(c);
   }
   return -1;
 }
@@ -755,6 +757,7 @@ channel_put(int cd,int data)
   //channel is closed - when owner dead or someone closed it
   if(c->owner == -1){
     release(&c->lock);
+    wakeup(c);
     return -1;
   }
   c->data[c->last] = data;
@@ -779,6 +782,7 @@ channel_take(int cd,uint64 data)
   //channel is closed - when owner dead or someone closed it
   if(c->owner == -1){
     release(&c->lock);
+    wakeup(c);
     return -1;
   }
   if(copyout(myproc()->pagetable, data, (char*)&c->data[c->first], sizeof(c->data[c->first])))
@@ -804,6 +808,7 @@ channel_destroy(int cd)
   acquire(&c->lock);
   if(c->owner == -1){
     release(&c->lock);
+    wakeup(c);
     return -1;
   }
   c->owner = -1;

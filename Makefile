@@ -117,6 +117,7 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 
 UPROGS=\
 	$U/_cat\
+	$U/_primes\
 	$U/_channel_test\
 	$U/_echo\
 	$U/_forktest\
