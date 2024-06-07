@@ -20,6 +20,9 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+//ADDED
+struct channel channels[NCHANNELS];
+
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
@@ -42,8 +45,8 @@ proc_mapstacks(pagetable_t kpgtbl)
     kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
   }
 }
-
-// initialize the proc table.
+//ADDED HERE
+// initialize the proc table. AND channels tables
 void
 procinit(void)
 {
@@ -55,6 +58,15 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->state = UNUSED;
       p->kstack = KSTACK((int) (p - proc));
+  }
+  //ADDED HERE initialize the channels
+  struct channel *c;
+  for(c=channels; c < &channels[NCHANNELS]; c++){
+    initlock(&c->lock, "channel");
+    c->size = 0;
+    c->first = 0;
+    c->last = 0;
+    c->owner = -1;
   }
 }
 
@@ -87,6 +99,12 @@ myproc(void)
   struct proc *p = c->proc;
   pop_off();
   return p;
+}
+
+struct channel*
+allhannels(void)
+{
+  return channels;
 }
 
 int
@@ -347,6 +365,7 @@ void
 exit(int status)
 {
   struct proc *p = myproc();
+  struct channel *c;
 
   if(p == initproc)
     panic("init exiting");
@@ -358,6 +377,17 @@ exit(int status)
       fileclose(f);
       p->ofile[fd] = 0;
     }
+  }
+  for(c=channels; c < &channels[NCHANNELS]; c++){
+    acquire(&c->lock);
+    if(c->owner == p->pid){
+      c->owner = -1;
+      c->first = 0;
+      c->last = 0;
+      c->size = 0;
+    }
+    release(&c->lock);
+    wakeup(c);
   }
 
   begin_op();
@@ -388,6 +418,7 @@ exit(int status)
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
 int
+
 wait(uint64 addr)
 {
   struct proc *pp;
@@ -586,6 +617,7 @@ int
 kill(int pid)
 {
   struct proc *p;
+  struct channel *c;
 
   for(p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
@@ -594,6 +626,17 @@ kill(int pid)
       if(p->state == SLEEPING){
         // Wake process from sleep().
         p->state = RUNNABLE;
+      }
+      for(c=channels; c < &channels[NCHANNELS]; c++){
+        acquire(&c->lock);
+        if(c->owner == p->pid){
+          c->owner = -1;
+          c->first = 0;
+          c->last = 0;
+          c->size = 0;
+        }
+        release(&c->lock);
+        wakeup(c);
       }
       release(&p->lock);
       return 0;
@@ -680,4 +723,94 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+//ADDED HERE
+int
+channel_create()
+{
+  struct channel *c;
+  for (c=channels; c < &channels[NCHANNELS]; c++){
+    acquire(&c->lock);
+    if(c->owner == -1){
+      c->owner = myproc()->pid;
+      release(&c->lock);
+      return c - channels;
+    }
+    release(&c->lock);
+  }
+  return -1;
+}
+
+int 
+channel_put(int cd,int data)
+{
+  if(cd<0 || cd>=NCHANNELS){
+    return -1;
+  }
+  struct channel *c = &channels[cd];
+  acquire(&c->lock);
+  while(c->size == 10 && c->owner != -1){
+    sleep(c, &c->lock);
+  }
+  //channel is closed - when owner dead or someone closed it
+  if(c->owner == -1){
+    release(&c->lock);
+    return -1;
+  }
+  c->data[c->last] = data;
+  c->last = (c->last + 1) % 10;
+  c->size++;
+  release(&c->lock);
+  wakeup(c);
+  return 0;
+}
+
+int
+channel_take(int cd,uint64 data)
+{
+  if(cd<0 || cd>=NCHANNELS){
+    return -1;
+  }
+  struct channel *c = &channels[cd];
+  acquire(&c->lock);
+  while(c->size == 0 && c->owner != -1){
+    sleep(c, &c->lock);
+  }
+  //channel is closed - when owner dead or someone closed it
+  if(c->owner == -1){
+    release(&c->lock);
+    return -1;
+  }
+  if(copyout(myproc()->pagetable, data, (char*)&c->data[c->first], sizeof(c->data[c->first])))
+  {
+    release(&c->lock);
+    wakeup(c);
+    return -1;
+  }
+  c->first = (c->first + 1) % 10;
+  c->size--;
+  release(&c->lock);
+  wakeup(c);
+  return 0;
+}
+
+int
+channel_destroy(int cd)
+{
+  if(cd<0 || cd>=NCHANNELS){
+    return -1;
+  }
+  struct channel *c = &channels[cd];
+  acquire(&c->lock);
+  if(c->owner == -1){
+    release(&c->lock);
+    return -1;
+  }
+  c->owner = -1;
+  c->first = 0;
+  c->last = 0;
+  c->size = 0;
+  release(&c->lock);
+  wakeup(c);
+  return 0;
 }
